@@ -10,7 +10,7 @@ async function runMigration() {
     await client.connect();
     console.log('Connected to database');
 
-    const sql = fs.readFileSync('/home/ubuntu/humory/packages/backend/src/db/migrations/003_add_certificate_options.sql', 'utf8');
+    const sql = fs.readFileSync('./src/db/migrations/003_add_certificate_options.sql', 'utf8');
 
     await client.query(sql);
     console.log('Migration completed successfully');

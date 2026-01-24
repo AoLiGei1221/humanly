@@ -18,6 +18,7 @@ import analyticsRoutes from './routes/analytics.routes';
 import trackerRoutes from './routes/tracker.routes';
 import documentRoutes from './routes/documents.routes';
 import certificateRoutes from './routes/certificates.routes';
+import aiRoutes from './routes/ai.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -119,6 +120,7 @@ export function createApp(): Express {
   app.use('/api/v1/projects', projectRoutes);
   app.use('/api/v1/documents', documentRoutes);
   app.use('/api/v1/certificates', certificateRoutes);
+  app.use('/api/v1/ai', aiRoutes);
   app.use('/api/v1/track', trackingRoutes);
   app.use('/api/v1', exportRoutes);
   app.use('/api/v1/projects', analyticsRoutes);

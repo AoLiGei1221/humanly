@@ -4,7 +4,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Save, FileText, Clock, Award } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { LexicalEditor } from '@humory/editor';
 import { useDocument } from '@/hooks/use-document';
@@ -15,8 +14,10 @@ import {
   CertificateGenerationDialog,
   type CertificateGenerationOptions,
 } from '@/components/certificates/certificate-generation-dialog';
+import { AIAssistantButton, AIAssistantPanel } from '@/components/ai';
+import { useAI } from '@/hooks/use-ai';
 import type { TrackedEvent } from '@humory/editor';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export default function DocumentEditorPage() {
   const params = useParams();
@@ -39,11 +40,50 @@ export default function DocumentEditorPage() {
   const [isGeneratingCertificate, setIsGeneratingCertificate] = useState(false);
   const [showCertificateDialog, setShowCertificateDialog] = useState(false);
 
+  // AI Assistant
+  const {
+    isPanelOpen: isAIPanelOpen,
+    togglePanel: toggleAIPanel,
+    closePanel: closeAIPanel,
+  } = useAI(documentId);
+
+  // Store document content for AI context
+  const [currentContent, setCurrentContent] = useState<string>('');
+  // Real-time word count
+  const [wordCount, setWordCount] = useState<number>(0);
+
+  // Calculate word count from text
+  const calculateWordCount = useCallback((text: string): number => {
+    if (!text || typeof text !== 'string') return 0;
+    const words = text.trim().replace(/\s+/g, ' ').split(' ').filter(word => word.length > 0);
+    return words.length;
+  }, []);
+
   useEffect(() => {
     if (document) {
       setTitle(document.title || '');
+      setCurrentContent(document.plainText || '');
+      setWordCount(document.wordCount || 0);
     }
   }, [document]);
+
+  // Keyboard shortcut for AI Assistant (Cmd/Ctrl + J)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'j') {
+        e.preventDefault();
+        toggleAIPanel();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleAIPanel]);
+
+  // Callback to get full content for AI context
+  const getFullContent = useCallback(() => {
+    return currentContent;
+  }, [currentContent]);
 
   const handleTitleSave = async () => {
     if (!document) return;
@@ -64,6 +104,10 @@ export default function DocumentEditorPage() {
   };
 
   const handleContentChange = async (content: Record<string, any>, plainText: string) => {
+    // Update current content for AI context
+    setCurrentContent(plainText);
+    // Update word count in real-time
+    setWordCount(calculateWordCount(plainText));
     // Auto-save is handled by the AutoSavePlugin
   };
 
@@ -148,9 +192,9 @@ export default function DocumentEditorPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <div className="border-b bg-background">
+      <div className="border-b bg-background shrink-0">
         <div className="mx-auto max-w-5xl px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -200,8 +244,12 @@ export default function DocumentEditorPage() {
                 </Badge>
               )}
               <div className="text-xs sm:text-sm text-muted-foreground">
-                {document.wordCount || 0} words
+                {wordCount} words
               </div>
+              <AIAssistantButton
+                isOpen={isAIPanelOpen}
+                onClick={toggleAIPanel}
+              />
               <Button
                 variant="outline"
                 size="sm"
@@ -234,21 +282,37 @@ export default function DocumentEditorPage() {
         </div>
       </div>
 
-      {/* Editor */}
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <LexicalEditor
-          documentId={documentId}
-          userId={user?.id}
-          initialContent={document.content}
-          placeholder="Start typing your document..."
-          trackingEnabled={true}
-          autoSaveEnabled={true}
-          autoSaveInterval={30000}
-          onContentChange={handleContentChange}
-          onEventsBuffer={handleEventsBuffer}
-          onAutoSave={handleAutoSave}
-          className="min-h-[600px]"
-        />
+      {/* Main content area with optional AI panel */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Editor */}
+        <div className={`flex-1 overflow-auto transition-all duration-300 ${isAIPanelOpen ? 'mr-0' : ''}`}>
+          <div className="mx-auto max-w-5xl px-4 py-8">
+            <LexicalEditor
+              documentId={documentId}
+              userId={user?.id}
+              initialContent={document.content}
+              placeholder="Start typing your document..."
+              trackingEnabled={true}
+              autoSaveEnabled={true}
+              autoSaveInterval={30000}
+              onContentChange={handleContentChange}
+              onEventsBuffer={handleEventsBuffer}
+              onAutoSave={handleAutoSave}
+              className="min-h-[600px]"
+            />
+          </div>
+        </div>
+
+        {/* AI Assistant Panel */}
+        {isAIPanelOpen && (
+          <div className="w-[400px] shrink-0 border-l bg-background overflow-hidden">
+            <AIAssistantPanel
+              documentId={documentId}
+              onClose={closeAIPanel}
+              getFullContent={getFullContent}
+            />
+          </div>
+        )}
       </div>
 
       {/* Certificate Generation Dialog */}
