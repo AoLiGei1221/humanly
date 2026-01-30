@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Save, FileText, Clock, Award } from 'lucide-react';
+import { ArrowLeft, FileText, Clock, Award } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -14,8 +14,9 @@ import {
   CertificateGenerationDialog,
   type CertificateGenerationOptions,
 } from '@/components/certificates/certificate-generation-dialog';
-import { AIAssistantButton, AIAssistantPanel } from '@/components/ai';
+import { AIAssistantButton, AIAssistantPanel, AISelectionMenu, type ActionType } from '@/components/ai';
 import { useAI } from '@/hooks/use-ai';
+import { useAIStore } from '@/stores/ai-store';
 import type { TrackedEvent } from '@humory/editor';
 import { useState, useEffect, useCallback } from 'react';
 
@@ -138,6 +139,36 @@ export default function DocumentEditorPage() {
 
     await trackEvents(mappedEvents);
   };
+
+  // Open AI panel with quoted text from selection
+  const openPanelWithQuote = useAIStore((state) => state.openPanelWithQuote);
+  const handleAskAI = useCallback(
+    (selectedText: string) => {
+      openPanelWithQuote(selectedText);
+    },
+    [openPanelWithQuote]
+  );
+
+  // Handler for AI selection menu actions (grammar fix, improve, etc.)
+  const handleAISelectionAction = useCallback(
+    async (actionType: ActionType, originalText: string, newText: string) => {
+      const event = {
+        eventType: 'ai_selection_action',
+        timestamp: new Date(),
+        textBefore: originalText,
+        textAfter: newText,
+        metadata: {
+          actionType,
+          originalText,
+          newText,
+        },
+      };
+
+      // Cast to any to allow new event type until shared package is rebuilt
+      await trackEvents([event as any]);
+    },
+    [trackEvents]
+  );
 
   const handleGenerateCertificate = async (options: CertificateGenerationOptions) => {
     try {
@@ -285,8 +316,8 @@ export default function DocumentEditorPage() {
       {/* Main content area with optional AI panel */}
       <div className="flex-1 flex overflow-hidden">
         {/* Editor */}
-        <div className={`flex-1 overflow-auto transition-all duration-300 ${isAIPanelOpen ? 'mr-0' : ''}`}>
-          <div className="mx-auto max-w-5xl px-4 py-8">
+        <div className={`flex-1 flex flex-col overflow-auto transition-all duration-300 ${isAIPanelOpen ? 'mr-0' : ''}`}>
+          <div className="mx-auto max-w-5xl w-full px-4 py-4 flex-1 flex flex-col">
             <LexicalEditor
               documentId={documentId}
               userId={user?.id}
@@ -298,14 +329,27 @@ export default function DocumentEditorPage() {
               onContentChange={handleContentChange}
               onEventsBuffer={handleEventsBuffer}
               onAutoSave={handleAutoSave}
-              className="min-h-[600px]"
+              className="flex-1"
+              renderSelectionPopup={({ selection, onClose, replaceSelection }) => (
+                <AISelectionMenu
+                  documentId={documentId}
+                  selection={selection}
+                  onClose={onClose}
+                  replaceSelection={replaceSelection}
+                  onActionApplied={handleAISelectionAction}
+                  onAskAI={(text) => {
+                    onClose();
+                    handleAskAI(text);
+                  }}
+                />
+              )}
             />
           </div>
         </div>
 
         {/* AI Assistant Panel */}
         {isAIPanelOpen && (
-          <div className="w-[400px] shrink-0 border-l bg-background overflow-hidden">
+          <div className="w-[400px] shrink-0 border-l bg-background flex flex-col">
             <AIAssistantPanel
               documentId={documentId}
               onClose={closeAIPanel}

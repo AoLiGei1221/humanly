@@ -192,6 +192,20 @@ export class AIModel {
   }
 
   /**
+   * Delete a chat session completely (including messages and logs)
+   */
+  static async deleteSession(sessionId: string): Promise<void> {
+    // Delete interaction logs associated with this session
+    await query(`DELETE FROM ai_interaction_logs WHERE session_id = $1`, [sessionId]);
+
+    // Delete messages associated with this session
+    await query(`DELETE FROM ai_chat_messages WHERE session_id = $1`, [sessionId]);
+
+    // Delete the session itself
+    await query(`DELETE FROM ai_chat_sessions WHERE id = $1`, [sessionId]);
+  }
+
+  /**
    * Get sessions for a document
    */
   static async getSessionsByDocument(

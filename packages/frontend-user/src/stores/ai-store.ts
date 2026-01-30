@@ -37,16 +37,22 @@ interface AIState {
   isLoading: boolean;
   error: string | null;
 
+  // Quoted text from selection
+  quotedText: string | null;
+
   // Actions
   openPanel: () => void;
   closePanel: () => void;
   setActiveTab: (tab: 'chat' | 'logs') => void;
+  setQuotedText: (text: string | null) => void;
+  clearQuotedText: () => void;
+  openPanelWithQuote: (text: string) => void;
 
   // Chat actions
   sendMessage: (documentId: string, message: string, context?: AIChatRequest['context']) => Promise<void>;
   sendMessageViaSocket: (documentId: string, message: string, context?: AIChatRequest['context']) => void;
   cancelStream: () => void;
-  clearMessages: () => void;
+  clearMessages: () => Promise<void>;
   startNewChat: () => Promise<void>;
 
   // Session actions
@@ -85,6 +91,7 @@ const initialState = {
   activeTab: 'chat' as const,
   isLoading: false,
   error: null,
+  quotedText: null,
 };
 
 // Track whether socket listeners have been set up (singleton pattern to prevent duplicates)
@@ -99,6 +106,9 @@ export const useAIStore = create<AIState>()(
       openPanel: () => set({ isPanelOpen: true }),
       closePanel: () => set({ isPanelOpen: false }),
       setActiveTab: (tab) => set({ activeTab: tab }),
+      setQuotedText: (text) => set({ quotedText: text }),
+      clearQuotedText: () => set({ quotedText: null }),
+      openPanelWithQuote: (text) => set({ isPanelOpen: true, quotedText: text }),
 
       // Send message via REST API (non-streaming)
       sendMessage: async (documentId, message, context) => {
@@ -179,8 +189,28 @@ export const useAIStore = create<AIState>()(
         set({ isStreaming: false, streamingContent: '' });
       },
 
-      clearMessages: () => {
-        set({ messages: [], streamingContent: '' });
+      clearMessages: async () => {
+        const { currentSession } = get();
+
+        // If there's an active session, delete it from the backend
+        if (currentSession) {
+          try {
+            await api.delete(`/ai/sessions/${currentSession.id}`);
+            emitEvent('ai:leave-session', { sessionId: currentSession.id });
+          } catch (error) {
+            // Log but continue - we still want to clear the local state
+            console.warn('Failed to delete session:', error);
+          }
+        }
+
+        // Clear local state and reset session to allow new one to be created
+        set({
+          messages: [],
+          streamingContent: '',
+          currentSession: null,
+          activeSuggestions: [],
+          quotedText: null,
+        });
       },
 
       startNewChat: async () => {
@@ -203,6 +233,7 @@ export const useAIStore = create<AIState>()(
           streamingContent: '',
           currentSession: null,
           activeSuggestions: [],
+          quotedText: null,
           error: null,
         });
       },

@@ -54,7 +54,9 @@ export type EventType =
   | 'ai_suggestion_rejected'
   | 'ai_modification_applied'
   | 'ai_logs_viewed'
-  | 'ai_logs_exported';
+  | 'ai_logs_exported'
+  // AI Selection Menu events (inline quick actions)
+  | 'ai_selection_action';
 
 export interface TrackerEvent {
   eventType: EventType;

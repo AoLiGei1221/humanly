@@ -14,7 +14,7 @@ export async function sendChatMessage(req: Request, res: Response): Promise<void
     throw new AppError(401, 'Unauthorized');
   }
 
-  const { documentId, sessionId, message, context } = req.body;
+  const { documentId, sessionId, message, context, silent } = req.body;
 
   if (!documentId) {
     throw new AppError(400, 'Document ID is required');
@@ -30,6 +30,16 @@ export async function sendChatMessage(req: Request, res: Response): Promise<void
     message: message.trim(),
     context,
   };
+
+  // Silent mode: only get AI response without creating session/logs
+  if (silent) {
+    const response = await AIService.silentChat(userId, request);
+    res.json({
+      success: true,
+      data: response,
+    });
+    return;
+  }
 
   const response = await AIService.chat(userId, request);
 
@@ -193,10 +203,10 @@ export async function getSession(req: Request, res: Response): Promise<void> {
 }
 
 /**
- * Close a chat session
+ * Delete a chat session (including messages and logs)
  * DELETE /api/v1/ai/sessions/:sessionId
  */
-export async function closeSession(req: Request, res: Response): Promise<void> {
+export async function deleteSession(req: Request, res: Response): Promise<void> {
   const userId = req.user?.userId;
   if (!userId) {
     throw new AppError(401, 'Unauthorized');
@@ -208,10 +218,10 @@ export async function closeSession(req: Request, res: Response): Promise<void> {
     throw new AppError(400, 'Session ID is required');
   }
 
-  await AIService.closeSession(userId, sessionId);
+  await AIService.deleteSession(userId, sessionId);
 
   res.json({
     success: true,
-    message: 'Session closed',
+    message: 'Session deleted',
   });
 }

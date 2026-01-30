@@ -8,7 +8,7 @@ import {
   applySuggestion,
   getSessions,
   getSession,
-  closeSession,
+  deleteSession,
 } from '../controllers/ai.controller';
 
 const router = Router();
@@ -66,8 +66,8 @@ router.get('/sessions/detail/:sessionId', asyncHandler(getSession));
 
 /**
  * DELETE /api/v1/ai/sessions/:sessionId
- * Close a chat session
+ * Delete a chat session (including messages and logs)
  */
-router.delete('/sessions/:sessionId', asyncHandler(closeSession));
+router.delete('/sessions/:sessionId', asyncHandler(deleteSession));
 
 export default router;

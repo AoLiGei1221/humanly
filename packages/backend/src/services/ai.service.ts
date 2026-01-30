@@ -313,6 +313,45 @@ export class AIService {
   private static provider: AIProvider = getAIProvider();
 
   /**
+   * Silent chat - get AI response without creating session/logs
+   * Used for quick inline actions like grammar correction
+   */
+  static async silentChat(
+    userId: string,
+    request: AIChatRequest
+  ): Promise<{ message: { id: string; role: string; content: string } }> {
+    // Verify document ownership
+    const isOwner = await DocumentModel.isOwner(request.documentId, userId);
+    if (!isOwner) {
+      throw new AppError(404, 'Document not found');
+    }
+
+    // Build simple messages without conversation history
+    const messages: { role: string; content: string }[] = [
+      { role: 'system', content: 'You are a helpful writing assistant. Follow the user instructions precisely and only return the requested text without any explanation.' },
+      { role: 'user', content: request.message },
+    ];
+
+    // Get AI response
+    const response = await this.provider.chat(messages, {
+      temperature: 0.3, // Lower temperature for more consistent results
+    });
+
+    logger.info('AI silent chat completed', {
+      userId,
+      documentId: request.documentId,
+    });
+
+    return {
+      message: {
+        id: `silent-${Date.now()}`,
+        role: 'assistant',
+        content: response.content,
+      },
+    };
+  }
+
+  /**
    * Process a chat message
    */
   static async chat(
@@ -640,5 +679,23 @@ export class AIService {
     await AIModel.closeSession(sessionId);
 
     logger.info('AI session closed', { userId, sessionId });
+  }
+
+  /**
+   * Delete a session completely (including messages and logs)
+   */
+  static async deleteSession(userId: string, sessionId: string): Promise<void> {
+    const session = await AIModel.findSessionById(sessionId);
+    if (!session) {
+      throw new AppError(404, 'Session not found');
+    }
+
+    if (session.userId !== userId) {
+      throw new AppError(403, 'Unauthorized');
+    }
+
+    await AIModel.deleteSession(sessionId);
+
+    logger.info('AI session deleted', { userId, sessionId });
   }
 }

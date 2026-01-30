@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useAI, useAILogs } from '@/hooks/use-ai';
+import { useAIStore } from '@/stores/ai-store';
 import { AIChatMessage, AISuggestion, AIInteractionLog } from '@humory/shared';
 import {
   Dialog,
@@ -54,6 +55,9 @@ export function AIAssistantPanel({
 
   const { logs, isLoading: logsLoading, loadMore, hasMore, refresh: refreshLogs } = useAILogs(documentId);
 
+  const quotedText = useAIStore((state) => state.quotedText);
+  const clearQuotedText = useAIStore((state) => state.clearQuotedText);
+
   // Calculate unique session count from logs
   const sessionCount = useMemo(() => {
     const uniqueSessions = new Set<string>();
@@ -74,6 +78,15 @@ export function AIAssistantPanel({
     textareaRef.current?.focus();
   }, []);
 
+  // Focus input when quoted text arrives
+  useEffect(() => {
+    if (quotedText) {
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 100);
+    }
+  }, [quotedText]);
+
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || isStreaming) return;
@@ -90,8 +103,16 @@ export function AIAssistantPanel({
       }
     }
 
-    sendMessage(input.trim(), Object.keys(context).length > 0 ? context : undefined);
+    // Include quoted text as context
+    let messageToSend = input.trim();
+    if (quotedText) {
+      context.selectedText = quotedText;
+      messageToSend = `Regarding this text:\n"${quotedText}"\n\n${messageToSend}`;
+    }
+
+    sendMessage(messageToSend, Object.keys(context).length > 0 ? context : undefined);
     setInput('');
+    clearQuotedText();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -110,6 +131,13 @@ export function AIAssistantPanel({
   const handleNewChat = async () => {
     await startNewChat();
     textareaRef.current?.focus();
+  };
+
+  // Handle clearing chat - also refreshes logs to update history
+  const handleClearChat = async () => {
+    await clearMessages();
+    // Refresh logs to update the chat history list
+    refreshLogs();
   };
 
   const handleOpenHistory = () => {
@@ -156,8 +184,8 @@ export function AIAssistantPanel({
 
           {/* History Dialog */}
           <Dialog open={historyPopoverOpen} onOpenChange={setHistoryPopoverOpen}>
-            <DialogContent className="max-w-md p-0">
-              <DialogHeader className="px-4 py-3 border-b">
+            <DialogContent className="max-w-md p-0 max-h-[80vh] flex flex-col">
+              <DialogHeader className="px-4 py-3 border-b shrink-0">
                 <DialogTitle className="text-sm font-semibold">Chat History</DialogTitle>
                 {sessionCount > 0 && (
                   <p className="text-xs text-muted-foreground mt-1">
@@ -166,14 +194,16 @@ export function AIAssistantPanel({
                 )}
               </DialogHeader>
 
-              {/* History List */}
-              <ChatHistoryList
-                logs={logs}
-                isLoading={logsLoading}
-                hasMore={hasMore}
-                onLoadMore={loadMore}
-                onSelectSession={handleSelectHistorySession}
-              />
+              {/* History List - scrollable */}
+              <div className="flex-1 overflow-hidden">
+                <ChatHistoryList
+                  logs={logs}
+                  isLoading={logsLoading}
+                  hasMore={hasMore}
+                  onLoadMore={loadMore}
+                  onSelectSession={handleSelectHistorySession}
+                />
+              </div>
             </DialogContent>
           </Dialog>
 
@@ -288,6 +318,29 @@ export function AIAssistantPanel({
 
         {/* Input Area - Match Editor footer style */}
         <div className="border-t p-4 bg-background shrink-0">
+          {/* Quoted text block */}
+          {quotedText && (
+            <div className="mb-2 rounded-lg border border-violet-200 bg-violet-50/50 p-2.5 relative">
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] uppercase tracking-wider text-violet-500 font-medium mb-1">
+                    Selected text
+                  </p>
+                  <p className="text-xs text-muted-foreground line-clamp-3 italic">
+                    &ldquo;{quotedText}&rdquo;
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 w-5 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={clearQuotedText}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="flex gap-2">
             <div className="flex-1 relative">
               <Textarea
@@ -295,7 +348,7 @@ export function AIAssistantPanel({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type your message..."
+                placeholder={quotedText ? "Ask a question about the selected text..." : "Type your message..."}
                 className="min-h-[80px] max-h-[160px] resize-none text-sm"
                 disabled={isStreaming}
               />
@@ -331,8 +384,8 @@ export function AIAssistantPanel({
                   size="sm"
                   variant="ghost"
                   className="h-9 w-9 p-0"
-                  onClick={clearMessages}
-                  title="Clear chat"
+                  onClick={handleClearChat}
+                  title="Delete chat"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -449,7 +502,7 @@ function ChatHistoryList({ logs, isLoading, hasMore, onLoadMore, onSelectSession
   }
 
   return (
-    <ScrollArea className="flex-1 max-h-[400px]">
+    <ScrollArea className="h-full max-h-[60vh]">
       <div className="p-2 space-y-1">
         {groupedLogs.map((group, groupIdx) => (
           <ChatSessionItem

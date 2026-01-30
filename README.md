@@ -12,6 +12,12 @@ A comprehensive text provenance service that tracks user typing activities in ex
 - **Certificate Generation** - Generate verifiable certificates of authenticity for documents
 - **Document Management** - User portal for documents and certificate verification
 - **Rich Text Editor** - Lexical-based editor with formatting and tracking capabilities
+- **AI Writing Assistant** - Integrated AI chat panel for document editing assistance
+  - Quote & Ask: Select text and ask AI questions about it with context
+  - Quick Actions: Grammar fixes, text improvements, simplification, and formalization
+  - Streaming Responses: Real-time AI responses with markdown support
+  - Chat History: Track all AI interactions with session management
+- **Event History** - Complete tracking of all AI interactions and quick edits
 - **Data Export** - Export events to JSON or CSV with filtering
 - **Tracking Library** - Lightweight JavaScript library (<15KB) for embedding in external forms
 
@@ -117,6 +123,9 @@ npm run dev:backend
 # Frontend only
 npm run dev:frontend
 
+# Frontend User Portal only
+npm run dev:frontend-user
+
 # Tracker library (watch mode)
 npm run dev:tracker
 
@@ -208,6 +217,15 @@ docker-compose up -d --build backend
 - `PUT /:id/access-code` - Update access code
 - `DELETE /:id/access-code` - Remove access code
 
+### AI Assistant Endpoints (`/ai`)
+
+- `POST /chat` - Send message to AI assistant (supports streaming via WebSocket)
+- `GET /logs` - Get AI interaction logs for a document
+- `GET /logs/:logId` - Get specific AI interaction log
+- `GET /sessions/:documentId` - Get chat sessions for a document
+- `GET /sessions/detail/:sessionId` - Get specific session with messages
+- `DELETE /sessions/:sessionId` - Delete a chat session
+
 For detailed API documentation with examples, see:
 - `packages/backend/AUTH_IMPLEMENTATION.md`
 - `packages/backend/ANALYTICS.md`
@@ -248,6 +266,79 @@ await tracker.destroy();
 ```
 
 For complete documentation, see `packages/tracker/README.md`.
+
+## 🤖 AI Writing Assistant
+
+The AI Writing Assistant provides intelligent help while editing documents with two main interaction modes:
+
+### Quick Actions (Selection Popup)
+
+Select any text in the editor to see a floating popup with instant AI actions:
+
+- **Fix Grammar** - Corrects grammar, spelling, and punctuation errors
+- **Improve Writing** - Makes text clearer and more professional
+- **Simplify** - Rewrites text to be easier to understand
+- **Make Formal** - Converts casual text to formal tone
+- **Ask AI** - Opens AI panel with selected text quoted for contextual questions
+
+Quick actions apply changes instantly without creating chat history entries.
+
+### AI Chat Panel (Cmd/Ctrl + J)
+
+Full conversational AI assistant for document editing:
+
+**Features:**
+
+- **Streaming Responses** - Real-time message streaming with markdown formatting
+- **Quote & Ask** - Click "Ask AI" on selected text to quote it in chat
+- **Context-Aware** - AI receives full document content and current selection
+- **Chat History** - View and reload previous conversations
+- **Session Management** - Create new chats or continue existing ones
+- **Message Tracking** - All interactions logged in Event History
+
+**Usage:**
+
+1. Press `Cmd/Ctrl + J` to open the AI panel
+2. Type your question or select text first to ask about it
+3. AI responds with helpful suggestions and explanations
+4. Apply suggestions manually or continue the conversation
+5. View chat history to reload previous conversations
+
+### Event Tracking
+
+All AI interactions are tracked in the Event History:
+
+- **AI Chat** events - Logged when messages are sent (includes quoted context)
+- **AI Quick Edit** events - Tracked with before/after text comparison
+- Clickable events show full conversation or text modifications
+- Filter by event type to analyze AI usage patterns
+
+### Configuration
+
+Configure AI provider in backend `.env`:
+
+```bash
+# AI Provider (openai, mock)
+AI_PROVIDER=openai
+AI_MODEL=gpt-4-turbo-preview
+AI_API_KEY=your-api-key
+AI_BASE_URL=https://api.openai.com/v1  # Optional: custom endpoint
+```
+
+For OpenRouter or other providers, set `AI_BASE_URL` accordingly:
+
+```bash
+AI_PROVIDER=openai
+AI_BASE_URL=https://openrouter.ai/api/v1
+AI_API_KEY=your-openrouter-key
+AI_MODEL=anthropic/claude-3-sonnet
+```
+
+### Database Schema (AI Features)
+
+- **ai_chat_sessions** - Chat sessions linked to documents
+- **ai_chat_messages** - Individual messages within sessions
+- **ai_interaction_logs** - Detailed logs of all AI interactions with token usage
 
 ## 🐳 Production Deployment
 
@@ -328,8 +419,11 @@ The database uses PostgreSQL with TimescaleDB for efficient time-series data sto
 - **sessions** - External user tracking sessions
 - **events** - TimescaleDB hypertable for event data (auto-partitioned by day)
 - **documents** - User-created documents with content and metadata
-- **document_events** - Link table between documents and events
+- **document_events** - Event history for document tracking
 - **certificates** - Document authenticity certificates with access codes
+- **ai_chat_sessions** - AI assistant chat sessions
+- **ai_chat_messages** - Messages within AI chat sessions
+- **ai_interaction_logs** - Detailed AI interaction logs with token usage
 - **refresh_tokens** - JWT refresh tokens
 
 For complete schema, see `packages/backend/src/db/migrations/` directory.
@@ -348,6 +442,7 @@ For complete schema, see `packages/backend/src/db/migrations/` directory.
 ## 🎨 Technology Stack
 
 ### Backend
+
 - Express.js - Web framework
 - Socket.IO - Real-time WebSocket communication
 - PostgreSQL + TimescaleDB - Time-series database
@@ -355,6 +450,7 @@ For complete schema, see `packages/backend/src/db/migrations/` directory.
 - JWT - Authentication
 - Nodemailer - Email service
 - Zod - Schema validation
+- OpenAI API / OpenRouter - AI assistant integration
 
 ### Frontend (Admin Dashboard)
 - Next.js 14 - React framework with App Router
@@ -373,13 +469,16 @@ For complete schema, see `packages/backend/src/db/migrations/` directory.
 - Document viewer and certificate management
 
 ### Editor
+
 - Lexical - Extensible text editor framework
 - React - UI library
 - TypeScript - Type-safe JavaScript
 - Rich text formatting (fonts, colors, alignment, lists)
 - Built-in tracking integration
+- Selection popup plugin for AI quick actions
 
 ### Tracker
+
 - TypeScript - Type-safe JavaScript
 - Rollup - Module bundler
 - Terser - Code minification
@@ -387,6 +486,7 @@ For complete schema, see `packages/backend/src/db/migrations/` directory.
 ## 📝 Environment Variables
 
 ### Backend (`packages/backend/.env`)
+
 ```bash
 NODE_ENV=development
 PORT=3001
@@ -398,6 +498,12 @@ JWT_REFRESH_EXPIRES=7d
 CORS_ORIGIN=http://localhost:3000
 EMAIL_SERVICE=console
 EMAIL_FROM=noreply@humanly.com
+
+# AI Assistant Configuration
+AI_PROVIDER=openai  # or 'mock' for testing
+AI_MODEL=gpt-4-turbo-preview
+AI_API_KEY=your-openai-api-key
+AI_BASE_URL=https://api.openai.com/v1  # Optional: custom endpoint (e.g., OpenRouter)
 ```
 
 ### Frontend (`packages/frontend/.env.local`)
@@ -496,10 +602,14 @@ Built with modern web technologies:
 **Status**: ✅ Full-Stack Application Complete
 
 **Features**:
+
 - ✅ Backend API with authentication and tracking
 - ✅ Admin dashboard with analytics and live preview
 - ✅ User portal with document and certificate management
 - ✅ Rich text editor with tracking integration
+- ✅ AI Writing Assistant with chat and quick actions
+- ✅ Quote & Ask feature for contextual AI help
+- ✅ Event history with AI interaction tracking
 - ✅ External form tracking library
 - ✅ WebSocket real-time communication
 - ✅ Certificate generation and verification system
