@@ -99,8 +99,9 @@ export interface AIInteractionLog {
       startOffset: number;
       endOffset: number;
     };
-    cursorPosition: number;
+    cursorPosition?: number;
   };
+  questionCategory?: 'understanding' | 'generation' | 'other';
 
   // Response
   response: string;
@@ -153,6 +154,8 @@ export interface AIChatRequest {
       endOffset: number;
     };
     cursorPosition?: number;
+    pdfContext?: string; // PDF document text for answering questions about papers
+    selectedText?: string; // Quoted text from editor selection
   };
 }
 

@@ -62,10 +62,13 @@ export class PDFService {
       ? (certificate.pastedCharacters / totalAuthored) * 100
       : 0;
 
-    // Header with border
-    doc
-      .rect(margin, margin, pageWidth - 2 * margin, pageHeight - 2 * margin)
-      .stroke('#333333');
+    const drawPageFrame = () => {
+      doc
+        .rect(margin, margin, pageWidth - 2 * margin, pageHeight - 2 * margin)
+        .stroke('#333333');
+    };
+
+    drawPageFrame();
 
     // Title section
     doc
@@ -170,6 +173,64 @@ export class PDFService {
 
     currentY += 20;
 
+           // AI assistance statistics section (always show, even if zeros)
+    const aiStats = (certificate as any).aiAuthorshipStats; // 如果 TS 类型还没加字段，先这样顶一下
+    const selection = aiStats?.selectionActions;
+    const questions = aiStats?.aiQuestions;
+
+    const aiSelectionTotal = selection?.total ?? 0;
+    const aiAccepted = selection?.accepted ?? 0;
+    const aiRejected = selection?.rejected ?? 0;
+    const aiAcceptanceRate = selection?.acceptanceRate ?? 0;
+
+    const aiQuestionsTotal = questions?.total ?? 0;
+    const aiUnderstanding = questions?.understanding ?? 0;
+    const aiGeneration = questions?.generation ?? 0;
+    const aiOther = questions?.other ?? 0;
+
+    // Check page space
+    if (currentY > pageHeight - margin - 260) {
+      doc.addPage();
+      drawPageFrame();
+      currentY = margin + 40;
+    }
+
+    doc
+      .fontSize(16)
+      .font('Helvetica-Bold')
+      .fillColor('#1a1a1a')
+      .text('AI Assistance Statistics', margin + 40, currentY);
+
+    currentY += 30;
+
+    const aiData = [
+      { label: 'AI Questions:', value: aiQuestionsTotal.toString() },
+      { label: '• Understanding:', value: aiUnderstanding.toString() },
+      { label: '• Generation:', value: aiGeneration.toString() },
+      { label: '• Other:', value: aiOther.toString() },
+      { label: 'AI Selection Actions:', value: aiSelectionTotal.toString() },
+      { label: '• Accepted:', value: aiAccepted.toString() },
+      { label: '• Rejected:', value: aiRejected.toString() },
+      { label: '• Acceptance Rate:', value: `${Number(aiAcceptanceRate).toFixed(1)}%` },
+      { label: '• Grammar Fixes:', value: (selection?.grammarFixes ?? 0).toString() },
+      { label: '• Improve Writing:', value: (selection?.improveWriting ?? 0).toString() },
+      { label: '• Simplify:', value: (selection?.simplify ?? 0).toString() },
+      { label: '• Make Formal:', value: (selection?.makeFormal ?? 0).toString() },
+    ];
+
+    doc.fontSize(11).font('Helvetica');
+
+    aiData.forEach(({ label, value }) => {
+      doc
+        .fillColor('#555555')
+        .text(label, margin + 60, currentY, { continued: true, width: 200 })
+        .fillColor('#1a1a1a')
+        .text(value, { width: pageWidth - 2 * margin - 140 });
+      currentY += 22;
+    });
+
+    currentY += 20;
+
     // Full Text Content (if included)
     if (certificate.includeFullText && certificate.plainTextSnapshot) {
       // Add new page for full text if needed
@@ -179,6 +240,7 @@ export class PDFService {
       // Check if we need a new page
       if (availableHeight < 200) {
         doc.addPage();
+        drawPageFrame();
         currentY = margin + 40;
       }
 
@@ -219,6 +281,7 @@ export class PDFService {
       // Add new page for verification if text took too much space
       if (currentY > pageHeight - 300) {
         doc.addPage();
+        drawPageFrame();
         currentY = margin + 40;
       }
     }

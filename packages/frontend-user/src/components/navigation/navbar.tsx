@@ -47,9 +47,17 @@ export function Navbar() {
     },
   ];
 
+  // Check if viewing a specific document (has UUID pattern in path)
+  const isDocumentEditorPage = /^\/documents\/[a-f0-9-]{36}/.test(pathname);
+
+  // Use wider layout for document editor, narrower for list pages
+  const containerClass = isDocumentEditorPage
+    ? 'mx-auto w-full max-w-[2400px] px-3'
+    : 'mx-auto max-w-7xl px-4 sm:px-6 lg:px-8';
+
   return (
     <nav className="border-b bg-background">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className={containerClass}>
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center">
             <Link href="/documents" className="text-xl font-bold">

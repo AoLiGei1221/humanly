@@ -30,6 +30,8 @@ interface AIChatMessageRow {
   created_at: Date;
 }
 
+export type AIQuestionCategory = 'understanding' | 'generation' | 'other';
+
 interface AIInteractionLogRow {
   id: string;
   document_id: string;
@@ -37,6 +39,7 @@ interface AIInteractionLogRow {
   session_id: string | null;
   query: string;
   query_type: AIQueryType;
+  question_category: AIQuestionCategory | null;
   context_snapshot: Record<string, any>;
   response: string | null;
   suggestions: AISuggestion[];
@@ -90,6 +93,7 @@ function toAIInteractionLog(row: AIInteractionLogRow): AIInteractionLog {
     timestamp: row.created_at,
     query: row.query,
     queryType: row.query_type,
+    questionCategory: row.question_category || undefined,
     contextSnapshot: row.context_snapshot,
     response: row.response || '',
     suggestions: row.suggestions,
@@ -192,11 +196,12 @@ export class AIModel {
   }
 
   /**
-   * Delete a chat session completely (including messages and logs)
+   * Delete a chat session completely (messages are deleted, but logs are preserved for statistics)
    */
   static async deleteSession(sessionId: string): Promise<void> {
-    // Delete interaction logs associated with this session
-    await query(`DELETE FROM ai_interaction_logs WHERE session_id = $1`, [sessionId]);
+    // Preserve interaction logs for statistics - just clear the session_id reference
+    // This keeps the question category stats intact for certificate generation
+    await query(`UPDATE ai_interaction_logs SET session_id = NULL WHERE session_id = $1`, [sessionId]);
 
     // Delete messages associated with this session
     await query(`DELETE FROM ai_chat_messages WHERE session_id = $1`, [sessionId]);
@@ -284,13 +289,14 @@ export class AIModel {
     sessionId?: string;
     query: string;
     queryType?: AIQueryType;
+    questionCategory?: AIQuestionCategory;
     contextSnapshot?: Record<string, any>;
   }): Promise<AIInteractionLog> {
     const sql = `
       INSERT INTO ai_interaction_logs (
-        document_id, user_id, session_id, query, query_type, context_snapshot, status
+        document_id, user_id, session_id, query, query_type, question_category, context_snapshot, status
       )
-      VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
       RETURNING *
     `;
 
@@ -300,6 +306,7 @@ export class AIModel {
       data.sessionId || null,
       data.query,
       data.queryType || 'other',
+      data.questionCategory || null,
       JSON.stringify(data.contextSnapshot || {}),
     ]);
 
@@ -494,5 +501,39 @@ export class AIModel {
 
     const rows = await query<{ id: string }>(sql, [documentId, userId]);
     return rows.length;
+  }
+
+  /**
+   * Get AI question statistics for a document (for certificate generation)
+   */
+  static async getQuestionStatsByDocument(documentId: string): Promise<{
+    totalQuestions: number;
+    understandingQuestions: number;
+    generationQuestions: number;
+    otherQuestions: number;
+  }> {
+    const sql = `
+      SELECT
+        COUNT(*) as total_questions,
+        COUNT(*) FILTER (WHERE question_category = 'understanding') as understanding_questions,
+        COUNT(*) FILTER (WHERE question_category = 'generation') as generation_questions,
+        COUNT(*) FILTER (WHERE question_category = 'other' OR question_category IS NULL) as other_questions
+      FROM ai_interaction_logs
+      WHERE document_id = $1 AND status = 'success'
+    `;
+
+    const row = await queryOne<{
+      total_questions: string;
+      understanding_questions: string;
+      generation_questions: string;
+      other_questions: string;
+    }>(sql, [documentId]);
+
+    return {
+      totalQuestions: parseInt(row?.total_questions || '0'),
+      understandingQuestions: parseInt(row?.understanding_questions || '0'),
+      generationQuestions: parseInt(row?.generation_questions || '0'),
+      otherQuestions: parseInt(row?.other_questions || '0'),
+    };
   }
 }

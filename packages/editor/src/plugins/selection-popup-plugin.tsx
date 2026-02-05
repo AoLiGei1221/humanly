@@ -3,6 +3,9 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import {
   $getSelection,
   $isRangeSelection,
+  $getRoot,
+  $createRangeSelection,
+  $setSelection,
   SELECTION_CHANGE_COMMAND,
   COMMAND_PRIORITY_LOW,
 } from 'lexical';
@@ -21,6 +24,7 @@ export interface SelectionPopupPluginProps {
     selection: SelectionInfo;
     onClose: () => void;
     replaceSelection: (newText: string) => void;
+    cancelAIAction: () => void;
   }) => React.ReactNode;
 }
 
@@ -35,6 +39,7 @@ export function SelectionPopupPlugin({
   const [selectionInfo, setSelectionInfo] = useState<SelectionInfo | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
+  const isProcessingAIAction = useRef(false); // Track if AI action is in progress
 
   const updateSelection = useCallback(() => {
     editor.getEditorState().read(() => {
@@ -85,19 +90,91 @@ export function SelectionPopupPlugin({
   const handleClose = useCallback(() => {
     setIsVisible(false);
     setSelectionInfo(null);
+    isProcessingAIAction.current = false; // Reset flag when closing
+  }, []);
+
+  const cancelAIAction = useCallback(() => {
+    console.log('[SelectionPopupPlugin] AI action cancelled, unlocking popup');
+    isProcessingAIAction.current = false;
   }, []);
 
   // Replace the current selection with new text
   const replaceSelection = useCallback((newText: string) => {
+    console.log('[SelectionPopupPlugin] replaceSelection called with:', newText);
+
+    // Store the selection info before updating, in case it gets cleared
+    const storedSelectionInfo = selectionInfo;
+
+    if (!storedSelectionInfo) {
+      console.warn('[SelectionPopupPlugin] No selection info available for replacement');
+      return;
+    }
+
+    console.log('[SelectionPopupPlugin] Replacing text:', {
+      start: storedSelectionInfo.start,
+      end: storedSelectionInfo.end,
+      originalText: storedSelectionInfo.text,
+      newText
+    });
+
+    // Set flag to prevent popup from closing during AI dialog interaction
+    isProcessingAIAction.current = true;
+
     editor.update(() => {
       const selection = $getSelection();
-      if ($isRangeSelection(selection)) {
-        // Delete the selected content and insert new text
+
+      // If selection is still active, use it directly
+      if ($isRangeSelection(selection) && !selection.isCollapsed()) {
+        console.log('[SelectionPopupPlugin] Using active selection');
         selection.insertText(newText);
+      } else {
+        // Selection was lost (e.g., user clicked on dialog), restore it using stored offsets
+        console.log('[SelectionPopupPlugin] Restoring selection from stored offsets');
+        const root = $getRoot();
+        const textNodes: any[] = [];
+
+        // Collect all text nodes
+        root.getChildren().forEach((child: any) => {
+          if (child.getTextContent) {
+            child.getChildren().forEach((node: any) => {
+              if (node.getTextContent) {
+                textNodes.push(node);
+              }
+            });
+          }
+        });
+
+        // Find the text node and restore selection
+        let currentOffset = 0;
+        for (const textNode of textNodes) {
+          const textContent = textNode.getTextContent();
+          const nodeLength = textContent.length;
+
+          if (currentOffset + nodeLength >= storedSelectionInfo.start) {
+            const localStart = storedSelectionInfo.start - currentOffset;
+            const localEnd = Math.min(storedSelectionInfo.end - currentOffset, nodeLength);
+
+            // Select the text in this node
+            const newSelection = $createRangeSelection();
+            newSelection.anchor.set(textNode.getKey(), localStart, 'text');
+            newSelection.focus.set(textNode.getKey(), localEnd, 'text');
+            $setSelection(newSelection);
+
+            // Now insert the new text
+            newSelection.insertText(newText);
+            break;
+          }
+
+          currentOffset += nodeLength;
+        }
       }
     });
+
+    // Reset flag and close popup
+    isProcessingAIAction.current = false;
     handleClose();
-  }, [editor, handleClose]);
+    console.log('[SelectionPopupPlugin] Text replacement complete');
+  }, [editor, handleClose, selectionInfo]);
 
   useEffect(() => {
     // Listen for selection changes
@@ -125,12 +202,39 @@ export function SelectionPopupPlugin({
 
     // Hide popup when clicking outside
     const handleClickOutside = (e: MouseEvent) => {
-      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
-        // Check if click is within the editor
-        const editorRoot = editor.getRootElement();
-        if (editorRoot && !editorRoot.contains(e.target as Node)) {
-          handleClose();
+      const target = e.target as HTMLElement;
+
+      // Don't close if clicking on a button within the popup
+      if (popupRef.current && popupRef.current.contains(target)) {
+        console.log('[SelectionPopupPlugin] Click is within popup, keeping open');
+        // Set flag when clicking buttons in popup (AI actions)
+        if (target.closest('button')) {
+          isProcessingAIAction.current = true;
+          console.log('[SelectionPopupPlugin] AI action initiated, locking popup');
         }
+        return;
+      }
+
+      // Don't close if an AI action is being processed
+      if (isProcessingAIAction.current) {
+        console.log('[SelectionPopupPlugin] Ignoring click outside - AI action in progress');
+        return;
+      }
+
+      // Check if click is within the editor or AI dialog
+      const editorRoot = editor.getRootElement();
+
+      // Check if the click is on an AI dialog (which has role="dialog" or data-radix-portal)
+      const isDialogClick = target.closest('[role="dialog"]') || target.closest('[data-radix-portal]');
+
+      if (isDialogClick) {
+        console.log('[SelectionPopupPlugin] Click is on dialog, keeping popup open');
+        return;
+      }
+
+      if (editorRoot && !editorRoot.contains(target)) {
+        console.log('[SelectionPopupPlugin] Click outside editor and popup, closing');
+        handleClose();
       }
     };
 
@@ -162,7 +266,7 @@ export function SelectionPopupPlugin({
 
   return createPortal(
     <div ref={popupRef} style={popupStyle}>
-      {renderPopup({ selection: selectionInfo, onClose: handleClose, replaceSelection })}
+      {renderPopup({ selection: selectionInfo, onClose: handleClose, replaceSelection, cancelAIAction })}
     </div>,
     document.body
   );

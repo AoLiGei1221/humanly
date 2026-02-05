@@ -15,7 +15,7 @@
     "build:frontend": "npm run build --workspace=@humory/frontend",
     "build:tracker": "npm run build --workspace=@humory/tracker",
     "build:all": "npm run build:tracker && npm run build:backend && npm run build:frontend",
-    "test": "npm run test --workspaces",
+    "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces",
     "clean": "npm run clean --workspaces && rm -rf node_modules",
     "docker:up": "docker-compose up -d",
@@ -33,6 +33,7 @@
     "npm": ">=9.0.0"
   },
   "dependencies": {
-    "bcrypt": "^5.1.1"
+    "bcrypt": "^5.1.1",
+    "react-resizable-panels": "^4.6.0"
   }
 }

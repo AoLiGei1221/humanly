@@ -19,6 +19,8 @@ import trackerRoutes from './routes/tracker.routes';
 import documentRoutes from './routes/documents.routes';
 import certificateRoutes from './routes/certificates.routes';
 import aiRoutes from './routes/ai.routes';
+import paperRoutes from './routes/paper.routes';
+import reviewRoutes from './routes/review.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -124,6 +126,8 @@ export function createApp(): Express {
   app.use('/api/v1/track', trackingRoutes);
   app.use('/api/v1', exportRoutes);
   app.use('/api/v1/projects', analyticsRoutes);
+  app.use('/api/v1', paperRoutes);
+  app.use('/api/v1', reviewRoutes);
 
   // 404 handler
   app.use((req: Request, res: Response) => {

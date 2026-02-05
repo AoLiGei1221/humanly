@@ -9,6 +9,8 @@ import {
   getSessions,
   getSession,
   deleteSession,
+  trackSelectionAction,
+  getSelectionStats,
 } from '../controllers/ai.controller';
 
 const router = Router();
@@ -69,5 +71,18 @@ router.get('/sessions/detail/:sessionId', asyncHandler(getSession));
  * Delete a chat session (including messages and logs)
  */
 router.delete('/sessions/:sessionId', asyncHandler(deleteSession));
+
+/**
+ * POST /api/v1/ai/selection-action
+ * Track an AI selection action (Fix grammar, Improve writing, etc.) with user decision
+ * Body: { documentId: string, actionType: 'grammar'|'improve'|'simplify'|'formal', originalText: string, suggestedText: string, decision: 'accepted'|'rejected', responseTimeMs?: number, modelVersion?: string }
+ */
+router.post('/selection-action', asyncHandler(trackSelectionAction));
+
+/**
+ * GET /api/v1/ai/selection-stats/:documentId
+ * Get AI selection action statistics for a document
+ */
+router.get('/selection-stats/:documentId', asyncHandler(getSelectionStats));
 
 export default router;

@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { AIService } from '../services/ai.service';
 import { AIChatRequest, AILogQueryFilters, AIContentModification } from '@humory/shared';
 import { AppError } from '../middleware/error-handler';
-import { logger } from '../utils/logger';
+import { AISelectionActionModel, AIActionType, AIDecision } from '../models/ai-selection-action.model';
 
 /**
  * Send a chat message to AI assistant
@@ -223,5 +223,80 @@ export async function deleteSession(req: Request, res: Response): Promise<void> 
   res.json({
     success: true,
     message: 'Session deleted',
+  });
+}
+
+/**
+ * Track an AI selection action (Fix grammar, Improve writing, etc.)
+ * POST /api/v1/ai/selection-action
+ */
+export async function trackSelectionAction(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.userId;
+  if (!userId) {
+    throw new AppError(401, 'Unauthorized');
+  }
+
+  const { documentId, actionType, originalText, suggestedText, decision, responseTimeMs, modelVersion } = req.body;
+
+  if (!documentId) {
+    throw new AppError(400, 'Document ID is required');
+  }
+
+  const validActionTypes: AIActionType[] = ['grammar', 'improve', 'simplify', 'formal'];
+  if (!actionType || !validActionTypes.includes(actionType)) {
+    throw new AppError(400, 'Valid action type is required (grammar, improve, simplify, formal)');
+  }
+
+  if (!originalText || typeof originalText !== 'string') {
+    throw new AppError(400, 'Original text is required');
+  }
+
+  if (!suggestedText || typeof suggestedText !== 'string') {
+    throw new AppError(400, 'Suggested text is required');
+  }
+
+  const validDecisions: AIDecision[] = ['accepted', 'rejected'];
+  if (!decision || !validDecisions.includes(decision)) {
+    throw new AppError(400, 'Valid decision is required (accepted, rejected)');
+  }
+
+  const action = await AISelectionActionModel.create({
+    documentId,
+    userId,
+    actionType,
+    originalText,
+    suggestedText,
+    decision,
+    responseTimeMs,
+    modelVersion,
+  });
+
+  res.json({
+    success: true,
+    data: action,
+  });
+}
+
+/**
+ * Get AI selection action statistics for a document
+ * GET /api/v1/ai/selection-stats/:documentId
+ */
+export async function getSelectionStats(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.userId;
+  if (!userId) {
+    throw new AppError(401, 'Unauthorized');
+  }
+
+  const { documentId } = req.params;
+
+  if (!documentId) {
+    throw new AppError(400, 'Document ID is required');
+  }
+
+  const stats = await AISelectionActionModel.getStatsByDocumentId(documentId);
+
+  res.json({
+    success: true,
+    data: stats,
   });
 }

@@ -274,11 +274,91 @@ function classifyQueryType(query: string): AIQueryType {
 }
 
 /**
+ * Question Category Types
+ */
+export type AIQuestionCategory = 'understanding' | 'generation' | 'other';
+
+/**
+ * Classify the question category based on content
+ * - 'understanding': Questions about understanding/clarifying content (e.g., "What does this mean?", "Explain...")
+ * - 'generation': Requests to create/modify content (e.g., "Write...", "Generate...", "Rewrite...")
+ */
+export function classifyQuestionCategory(query: string, queryType: AIQueryType): AIQuestionCategory {
+  const lowerQuery = query.toLowerCase();
+
+  // Generation indicators - requests to create or modify content
+  const generationKeywords = [
+    'write', 'generate', 'create', 'compose', 'draft', 'produce',
+    'rewrite', 'rephrase', 'improve', 'fix', 'correct', 'edit',
+    'expand', 'elaborate', 'extend', 'add', 'include',
+    'summarize', 'shorten', 'condense', 'simplify',
+    'translate', 'convert', 'format', 'restructure',
+    'make it', 'change to', 'turn this', 'help me write',
+    'can you write', 'please write', 'could you write',
+  ];
+
+  // Understanding indicators - questions about content
+  const understandingKeywords = [
+    'what does', 'what is', 'what are', 'what was', 'what were',
+    'explain', 'clarify', 'describe', 'define', 'meaning of',
+    'why does', 'why is', 'why are', 'why did',
+    'how does', 'how is', 'how are', 'how did',
+    'tell me about', 'help me understand', 'i don\'t understand',
+    'what do you think', 'what\'s the', 'who is', 'who are',
+    'when did', 'when was', 'where is', 'where are',
+    'is this', 'are these', 'does this', 'do these',
+    'can you explain', 'could you explain', 'please explain',
+  ];
+
+  // Query types that are typically generation
+  const generationQueryTypes: AIQueryType[] = [
+    'grammar_check', 'spelling_check', 'rewrite', 'summarize',
+    'expand', 'translate', 'format',
+  ];
+
+  // Query types that are typically understanding
+  const understandingQueryTypes: AIQueryType[] = [
+    'question', 'reference',
+  ];
+
+  // Check explicit keywords first
+  for (const keyword of generationKeywords) {
+    if (lowerQuery.includes(keyword)) {
+      return 'generation';
+    }
+  }
+
+  for (const keyword of understandingKeywords) {
+    if (lowerQuery.includes(keyword)) {
+      return 'understanding';
+    }
+  }
+
+  // Fall back to query type classification
+  if (generationQueryTypes.includes(queryType)) {
+    return 'generation';
+  }
+
+  if (understandingQueryTypes.includes(queryType)) {
+    return 'understanding';
+  }
+
+  // If it's a question (contains '?'), lean towards understanding
+  if (lowerQuery.includes('?')) {
+    return 'understanding';
+  }
+
+  return 'other';
+}
+
+/**
  * Build system prompt for the AI assistant
  */
 function buildSystemPrompt(context?: {
   fullContent?: string;
   selection?: { text: string; startOffset: number; endOffset: number };
+  pdfContext?: string;
+  selectedText?: string;
 }): string {
   let prompt = `You are an AI writing assistant integrated into a document editor. Your role is to help users improve their writing through:
 
@@ -298,8 +378,16 @@ Guidelines:
 
 `;
 
+  if (context?.pdfContext) {
+    prompt += `\nThe user has a PDF research paper open in their workspace. Here is the content from the PDF:\n\n---\n${context.pdfContext}\n---\n\nYou can reference this paper when answering the user's questions.\n\n`;
+  }
+
   if (context?.fullContent) {
     prompt += `\nThe user is working on a document with the following content:\n\n---\n${context.fullContent.slice(0, 4000)}\n---\n`;
+  }
+
+  if (context?.selectedText) {
+    prompt += `\nThe user has selected/quoted this text from the editor:\n\n---\n${context.selectedText}\n---\n`;
   }
 
   if (context?.selection?.text) {
@@ -375,8 +463,9 @@ export class AIService {
       throw new AppError(404, 'Session not found');
     }
 
-    // Classify query
+    // Classify query type and category
     const queryType = classifyQueryType(request.message);
+    const questionCategory = classifyQuestionCategory(request.message, queryType);
 
     // Create log entry
     const log = await AIModel.createLog({
@@ -385,6 +474,7 @@ export class AIService {
       sessionId: session.id,
       query: request.message,
       queryType,
+      questionCategory,
       contextSnapshot: request.context,
     });
 
@@ -486,8 +576,9 @@ export class AIService {
         throw new AppError(404, 'Session not found');
       }
 
-      // Classify query
+      // Classify query type and category
       const queryType = classifyQueryType(request.message);
+      const questionCategory = classifyQuestionCategory(request.message, queryType);
 
       // Create log entry
       const log = await AIModel.createLog({
@@ -496,6 +587,7 @@ export class AIService {
         sessionId: session.id,
         query: request.message,
         queryType,
+        questionCategory,
         contextSnapshot: request.context,
       });
 

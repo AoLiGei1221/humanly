@@ -5,6 +5,7 @@ import { Sparkles, Check, Wand2, BookOpen, Loader2, MessageSquare } from 'lucide
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api-client';
+import { AISuggestionDialog } from './ai-suggestion-dialog';
 
 interface SelectionInfo {
   text: string;
@@ -18,12 +19,21 @@ interface AISelectionMenuProps {
   selection: SelectionInfo;
   onClose: () => void;  // Called when user clicks outside or action completes
   replaceSelection: (newText: string) => void;
+  cancelAIAction: () => void; // Called when user rejects AI suggestion
   onActionApplied?: (actionType: ActionType, originalText: string, newText: string) => void;
   onAskAI?: (selectedText: string) => void;
 }
 
 export type ActionType = 'grammar' | 'improve' | 'simplify' | 'formal';
 
+interface PendingSuggestion {
+  actionType: ActionType;
+  actionLabel: string;
+  originalText: string;
+  suggestedText: string;
+}
+
+// Define the available AI actions with their prompts and icons
 const ACTIONS: { type: ActionType; label: string; icon: React.ReactNode; prompt: string }[] = [
   {
     type: 'grammar',
@@ -56,11 +66,13 @@ export function AISelectionMenu({
   selection,
   onClose: _onClose,  // Available but not currently used - replaceSelection handles closing
   replaceSelection,
+  cancelAIAction,
   onActionApplied,
   onAskAI,
 }: AISelectionMenuProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<ActionType | null>(null);
+  const [pendingSuggestion, setPendingSuggestion] = useState<PendingSuggestion | null>(null);
 
   const handleAction = async (action: typeof ACTIONS[number]) => {
     if (isLoading) return;
@@ -102,13 +114,13 @@ export function AISelectionMenu({
         improvedText = improvedText.slice(1, -1);
       }
 
-      // Replace the selected text with the improved version
-      replaceSelection(improvedText);
-
-      // Track the action in event history
-      if (onActionApplied) {
-        onActionApplied(action.type, selection.text, improvedText);
-      }
+      // Show confirmation dialog instead of auto-applying
+      setPendingSuggestion({
+        actionType: action.type,
+        actionLabel: action.label,
+        originalText: selection.text,
+        suggestedText: improvedText,
+      });
     } catch (error) {
       console.error('AI action failed:', error);
       // Don't close on error, let user try again
@@ -116,6 +128,76 @@ export function AISelectionMenu({
       setIsLoading(false);
       setLoadingAction(null);
     }
+  };
+
+  const handleAcceptSuggestion = async () => {
+    console.log('[AISelectionMenu] Accept button clicked', { pendingSuggestion });
+    if (!pendingSuggestion) {
+      console.warn('[AISelectionMenu] No pending suggestion found');
+      return;
+    }
+
+    console.log('[AISelectionMenu] About to call replaceSelection with:', pendingSuggestion.suggestedText);
+    console.log('[AISelectionMenu] replaceSelection function:', replaceSelection);
+
+    // Replace the selected text with the AI suggestion
+    replaceSelection(pendingSuggestion.suggestedText);
+    console.log('[AISelectionMenu] replaceSelection called');
+
+    // Track the action in event history (local tracking)
+    if (onActionApplied) {
+      console.log('[AISelectionMenu] Tracking action in event history');
+      onActionApplied(
+        pendingSuggestion.actionType,
+        pendingSuggestion.originalText,
+        pendingSuggestion.suggestedText
+      );
+    }
+
+    // Track the acceptance in the backend for certificate statistics
+    try {
+      await api.post('/ai/selection-action', {
+        documentId,
+        actionType: pendingSuggestion.actionType,
+        originalText: pendingSuggestion.originalText,
+        suggestedText: pendingSuggestion.suggestedText,
+        decision: 'accepted',
+      });
+      console.log('[AISelectionMenu] Selection action tracked (accepted)');
+    } catch (error) {
+      console.error('[AISelectionMenu] Failed to track selection action:', error);
+      // Don't block the user flow if tracking fails
+    }
+
+    // Clear the pending suggestion
+    console.log('[AISelectionMenu] Clearing pending suggestion');
+    setPendingSuggestion(null);
+  };
+
+  const handleRejectSuggestion = async () => {
+    console.log('[AISelectionMenu] Reject button clicked');
+
+    // Track the rejection in the backend for certificate statistics
+    if (pendingSuggestion) {
+      try {
+        await api.post('/ai/selection-action', {
+          documentId,
+          actionType: pendingSuggestion.actionType,
+          originalText: pendingSuggestion.originalText,
+          suggestedText: pendingSuggestion.suggestedText,
+          decision: 'rejected',
+        });
+        console.log('[AISelectionMenu] Selection action tracked (rejected)');
+      } catch (error) {
+        console.error('[AISelectionMenu] Failed to track selection action:', error);
+        // Don't block the user flow if tracking fails
+      }
+    }
+
+    // Unlock the selection popup so it can be closed normally
+    cancelAIAction();
+    // Simply close the dialog without making any changes
+    setPendingSuggestion(null);
   };
 
   return (
@@ -163,6 +245,19 @@ export function AISelectionMenu({
             Ask AI
           </Button>
         </>
+      )}
+
+      {/* AI Suggestion Confirmation Dialog */}
+      {pendingSuggestion && (
+        <AISuggestionDialog
+          isOpen={true}
+          onClose={() => setPendingSuggestion(null)}
+          onAccept={handleAcceptSuggestion}
+          onReject={handleRejectSuggestion}
+          title={`${pendingSuggestion.actionLabel} - Review Suggestion`}
+          originalText={pendingSuggestion.originalText}
+          suggestedText={pendingSuggestion.suggestedText}
+        />
       )}
     </div>
   );
